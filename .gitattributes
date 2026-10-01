@@ -1,0 +1,14 @@
+# 跨平台換行與編碼：讓同一份 repo 在 Windows / macOS / Linux 都能安全使用
+* text=auto
+
+# shell 腳本一律 LF（Windows 的 autocrlf 若把它轉成 CRLF，複製到 Linux 會壞掉）
+*.sh   text eol=lf
+*.mjs  text eol=lf
+
+# 設定與文件一律 LF（YAML 由 harness 解析）
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.md   text eol=lf
+
+# PowerShell 腳本用 CRLF（Windows 原生；BOM 由內容保留，不在此處理）
+*.ps1  text eol=crlf

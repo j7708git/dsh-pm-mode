@@ -1,0 +1,21 @@
+# 環境與金鑰（絕不進版控）
+.env
+.env.*
+*.key
+*.pem
+credentials*
+secrets*
+
+# 產物與快取
+node_modules/
+dist/
+build/
+.artifacts/
+__pycache__/
+.venv/
+venv/
+*.log
+
+# 系統
+.DS_Store
+Thumbs.db

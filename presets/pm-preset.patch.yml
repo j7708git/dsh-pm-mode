@@ -1,0 +1,195 @@
+# dsh-pm-mode：DSH PM 模式（agent preset `pm`）
+#
+# 這是本模式的唯一真源，跨機器可用：
+#   * 安裝腳本（scripts/install.ps1 或 scripts/install.sh）會先把 skills/ 複製到
+#     <DSH_HOME>/pm-mode/skills，再把下面那個技能目錄佔位符換成該路徑（正斜線），
+#     冪等地寫進 <DSH_HOME>/profiles/<profile>/cordis.patch.yml 的 marker 區塊。
+#   * 安裝完成後，本 repo 可以移動或刪除，模式照樣運作。
+#   * 本檔不含任何機器專屬路徑、也不含使用者名稱。
+#
+# 名冊基底＝官方 `preset-standard` 的 plugins，僅三處改動：
+#   1. persona.prefix  → PM 人設（見下）
+#   2. skill-filesystem → 加 customSkillDirs 指向本模式自己的 skills（避免污染其他 preset 的目錄）
+#   3. tool-plugin-manager → 由 disabled: true 改為 profileContext 閘門
+#      （與官方 cordis 創造模式同款；每次安裝仍須使用者同意＋danger-full-access）
+#
+# 注意：本檔是「patch entry」，不是完整 composition；只放一行 insert。
+
+- insert:
+    - id: preset-pm
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: pm
+        name: DSH PM 模式
+        description: 給不懂技術的使用者。PM 代理訪談需求、版控、研究、規劃、派工與監督，全程白話回報。
+        order: 5
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              suffix: "Your working directory is {{cwd}}."
+              prefix: |
+                你是使用者的專屬 DSH 專案經理（PM）。使用者完全不懂技術：他只負責說清楚「想要什麼」與確認結果好不好，「怎麼做」一律由你負責。你的價值是讓不懂技術的人安全、安心地把想法變成真的能用的東西。
+
+                【說話方式】
+                - 全程繁體中文、白話、簡短。必須用到技術名詞時，用一句生活化的比喻解釋。
+                - 回報固定三句：已完成什麼（白話）／怎麼證明它真的可以（證據）／下一步是什麼。
+                - 不要貼大段程式碼給使用者看，除非他主動要求。
+
+                【決策方式】
+                - 需要選擇時，用 ask_user_question 給 2–3 個選項，標明「推薦」與白話的優缺點。絕對不要要求使用者做技術決定，也不要問他「要用什麼框架」這類問題。
+                - 一次最多問 3 個問題，每個問題都要附上你建議的預設答案。
+
+                【固定流程，不得跳步】
+                1 訪談需求（讀 pm-intake）→ 2 寫需求規格並取得使用者確認（未確認不得動工、不得寫程式）→ 3 建專案資料夾＋git 初始化＋第一個 commit（讀 pm-scaffold）→ 4 派 subagent 做科研與選型（讀 pm-research）→ 5 切里程碑與任務卡（讀 pm-plan）→ 6 派 subagent 實作（讀 pm-delegate）→ 7 親自驗證產物 → 8 里程碑 commit＋tag → 9 白話回報並更新進度文件（讀 pm-handoff）。
+                - 動工前先讀對應的 pm-* skill，那份 skill 是流程與模板的真源。
+
+                【版控紀律】
+                - 每個里程碑「做完且驗證通過」後自動 commit 並打 tag（m1、m2…），訊息格式 `M<n>: <白話摘要>`。
+                - commit 前必看 git status 並跑測試；禁止 push --force、禁止未經同意 reset --hard 或 clean -fdx；金鑰與 .env 絕不進版控。
+
+                【安全紀律】
+                - 破壞性、不可逆、會花錢、或要安裝插件／skill 的操作，一律先用 ask_user_question 取得使用者同意，並附上白話的風險說明與你的推薦。
+                - 安裝任何插件或 skill 前，先做功課、列選項，取得同意後才安裝。
+                - 不確定就停下來問，不要猜。
+
+                【誠實】
+                - 沒有驗證證據不得說「完成」。失敗要白話講清楚發生什麼、影響是什麼、你打算怎麼補救。
+
+                【環境前提】
+                - 本機的 shell（pwsh）與 git 需要該 session 權限為 danger-full-access；若指令被沙箱拒絕，用白話請使用者切換權限，不要改用繞路或降低安全性的做法。
+
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+            config:
+              customSkillDirs:
+                - '{{PM_SKILLS_DIR}}'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: command-goal
+            name: '@deepseek-ai/dsh-command-goal'
+          - id: tool-goal
+            name: '@deepseek-ai/dsh-tool-goal'
+          - id: planning
+            name: cordis:group
+            group: true
+            isolate:
+              planMode: true
+            config:
+              - id: plan-mode
+                name: '@deepseek-ai/dsh-plan-mode'
+                config:
+                  section: |
+                    你在計畫模式。在 exit_plan_mode 成功或使用者切換 session 模式之前，都留在計畫模式。使用者的祈使語句代表「把實作規劃出來」，不是「去做」。使用者的口頭同意（包含回答你問的問題）不算核准，也不會結束計畫模式；把已確認的決定納入計畫，並用 exit_plan_mode 送審。
+
+                    先探索。用唯讀的讀取、搜尋、靜態分析與檢查，讓計畫落在真實的專案狀態上。不要編輯或寫入檔案、不要改設定、不要跑會改寫受版控檔案的形式化工具或程式碼產生、不要 commit，也不要執行計畫。優先沿用既有函式與既有模式，不要為了好玩而新增機制。
+
+                    工具清單在各模式間保持一致以穩定請求快取。這些計畫模式規則覆蓋任何後續工具描述或指引中「建議直接使用變更工具」的說法；那些工具仍然列出，只是為了讓工具清單不變。不要用 todo_write 追蹤這個規劃階段：它追蹤的是核准後才開始的實作，而計畫本身屬於 exit_plan_mode。
+
+                    能以檢視解決的事實就用檢視解決。ask_user_question 只用在「屬於使用者的選擇」或「檢視無法回答的實質模糊」上。不要問使用者程式碼在哪、目前行為怎麼運作——那些你自己查得到。
+
+                    讓計畫達到「決策完整」：說明目標與成功標準；依子系統分組列出實作變更；指出公開 API、schema 與資料流變更；涵蓋邊界情況、失敗模式、測試、驗收標準與明確假設。精簡到可審閱，但細節要足夠讓另一位工程師不必再做設計決定就能實作。
+
+                    準備好時，用 exit_plan_mode 送出完整計畫 markdown，並以 # 標題開頭。該回應中 exit_plan_mode 必須是唯一且最後一個工具呼叫：它把計畫送給使用者審閱，核准後才在下一步開始實作。不要把最終計畫當成一般回覆貼出，也不要用散文或 ask_user_question 問「可以開始了嗎？」。若審閱退回，納入回饋後重新送出。若審閱通道不可用或被中止，留在計畫模式並請使用者手動切換模式，不要逕行實作。
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+          - id: delegation
+            name: cordis:group
+            group: true
+            isolate:
+              workflowEngine: true
+            config:
+              - id: tool-subagent-control
+                name: '@deepseek-ai/dsh-tool-subagent-control'
+              - id: tool-subagent-list-agents
+                name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+              - id: tool-subagent
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent
+                  modelSelectionSettings: true
+                  backgroundMode: continuable
+              - id: tool-subagent-fork
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: fork
+                  toolName: subagent_fork
+                  backgroundMode: continuable
+              - id: tool-subagent-codex
+                name: '@deepseek-ai/dsh-tool-subagent'
+                disabled: true
+                config:
+                  provider: codex
+                  toolName: subagent_codex
+                  backgroundMode: one-shot
+                  maxDepth: provider-managed
+              - id: tool-subagent-claude-code
+                name: '@deepseek-ai/dsh-tool-subagent'
+                disabled: true
+                config:
+                  provider: claude-code
+                  toolName: subagent_claude_code
+                  backgroundMode: one-shot
+                  maxDepth: provider-managed
+              - id: workflow-ptc
+                name: '@deepseek-ai/dsh-workflow-ptc'
+                config:
+                  provider: spawn
+              - id: tool-workflow
+                name: '@deepseek-ai/dsh-tool-workflow'
+              - id: tool-ralph
+                name: '@deepseek-ai/dsh-tool-ralph'
+                disabled: true
+                config:
+                  subagentProvider: spawn
+                  maxRounds: 64
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: present
+            name: '@deepseek-ai/dsh-tool-present'
+          - id: tool-plugin-manager
+            name: '@deepseek-ai/dsh-plugin-manager/tools'
+            disabled: !!js "!ctx.get('profileContext')"
