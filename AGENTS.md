@@ -7,14 +7,18 @@
 
 1. **前檢**（缺一項就停下來白話回報，不要硬做）
    - DSH home：`$DSH_HOME`，沒設就是 `~/.dsh`。
-   - 該 home 底下要有一個含 `cordis.patch.yml` 的 profile（通常是 `web`）。
-2. **安裝**（依你所在平台挑一個）
+   - 該 home 底下要有一個含 `cordis.patch.yml` 的 profile。**注意 profile 不只一個**：
+     桌面版用 `desktop`、瀏覽器版／CLI 常用 `web`、還有 `headless`。**不要自己猜一個**，安裝器會自動處理所有支援 preset 的 profile。
+2. **安裝**（依你所在平台挑一個；**不要加 `-Profile`／`--profile`**，除非使用者明確要求只裝某一個）
    - Windows：`powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1`
    - macOS / Linux：`bash scripts/install.sh`
-   - 需要指定時：Windows 用 `-DshHome DIR -Profile NAME`；其他用 `--dsh-home DIR --profile NAME`。
+   - 需要指定 DSH home 時：Windows 用 `-DshHome DIR`；其他用 `--dsh-home DIR`。
 3. **驗證**：跑同目錄的 verify（Windows `verify.ps1`，其他 `verify.sh`）。
-   必須看到「**全部檢查通過**」，且 dump 差異是「**移除 0 行**」。
-4. **回報使用者（白話三句）**：裝好了什麼／怎麼證明沒動到別的東西／請他**完整重啟 DSH** 再開**新 session** 選「DSH PM 模式」。
+   必須看到「**全部檢查通過**」。dump 差異對 CLI profile（如 `web`）應「**移除 0 行**」；
+   `desktop` profile 由 Electron app 專屬管理，CLI 無法 dump，該行會是 `[WARN]`，這是正常的——改用「重啟後開新 session 看選擇器」驗證。
+4. **回報使用者（白話三句）**：裝好了什麼（含裝到哪幾個 profile）／怎麼證明沒動到別的東西／請他**完整重啟 DSH** 再開**新 session** 選「DSH PM 模式」。
+5. **若使用者說「重啟後還是看不到」**：先用 `cordis_inspect_query`（host `Config` provider 的 `listConfigs`）查執行期組合樹有沒有 `preset-pm`。
+   沒有 → 表示該 profile 沒被載入（通常是裝錯 profile，或 app 重寫了 patch 檔），不要改用別的猜測手法。
 
 ## 禁止
 

@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## v1.3 — 2026-10-02
+
+- **修正「裝了卻看不到」**：DSH 桌面版用的是 `desktop` profile，不是 `web`；v1.2 只裝 `web`，所以重啟後選擇器裡沒有 PM 模式。
+- 安裝器改為**預設安裝到所有支援 agent preset 的 profile**（`desktop`、`web`…；`headless` 這種沒有 web-app bundle 的會自動略過），
+  `-Profile`／`--profile` 可只裝一個；`uninstall` 與 `verify` 同步變成逐 profile 處理。
+- `verify` 的 dump 比對改為**逐 profile 的 baseline**（`dump-baseline-<profile>.txt`）。
+- 已知限制寫入文件：`desktop` profile 由 Electron app 專屬管理，`dsh --dump-config` 無法 compose 它
+  （回 `profile "desktop" is managed exclusively by the Electron application`），
+  因此該 profile 的實機驗證只能靠「重啟後開新 session 看選擇器」。
+
 ## v1.2 — 2026-10-02
 
 - **安裝時一併複製 `templates/`** 到 `<DSH_HOME>/pm-mode/templates/`（PM 開新專案用），

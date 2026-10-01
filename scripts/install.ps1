@@ -3,31 +3,33 @@
     dsh-pm-mode 安裝腳本（Windows）。可重複執行，安裝後原 repo 可移動或刪除。
 
 .DESCRIPTION
-    1. 自動找出 DSH home（$env:DSH_HOME，否則 ~/.dsh）與 profile（預設 web，找不到就自動挑唯一可用者）。
-    2. 把 skills/ 複製到 <DSH_HOME>/pm-mode/skills，並寫入 manifest。
-    3. 把 presets/pm-preset.patch.yml 的 {{PM_SKILLS_DIR}} 換成上面那個路徑，
-       冪等地寫進 <DSH_HOME>/profiles/<profile>/cordis.patch.yml 的 marker 區塊（先備份）。
+    1. 自動找出 DSH home（$env:DSH_HOME，否則 ~/.dsh），並對**所有支援 agent preset 的 profile**
+       安裝（desktop / web / …）；用 -Profile 可只裝一個。
+    2. 把 skills/ 與 templates/ 複製到 <DSH_HOME>/pm-mode/，並寫入 manifest。
+    3. 把 presets/pm-preset.patch.yml 的 {{PM_SKILLS_DIR}} 換成該路徑，
+       冪等地寫進每個 <DSH_HOME>/profiles/<profile>/cordis.patch.yml 的 marker 區塊（先備份）。
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1
 .EXAMPLE
-    .\scripts\install.ps1 -DshHome 'D:\dsh-home' -Profile web
+    .\scripts\install.ps1 -DshHome 'D:\dsh-home' -Profile desktop
 #>
 [CmdletBinding()]
 param(
     [string]$DshHome = $(if ($env:DSH_HOME) { $env:DSH_HOME } else { Join-Path $HOME '.dsh' }),
-    [string]$Profile = 'web'
+    [string]$Profile = ''
 )
 
 $ErrorActionPreference = 'Stop'
 
 $begin = '# >>> dsh-pm-mode:begin'
 $end   = '# <<< dsh-pm-mode:end'
-$version = '1.2'
+$version = '1.3'
 
-$repoRoot  = Split-Path -Parent $PSScriptRoot
-$source    = Join-Path $repoRoot 'presets\pm-preset.patch.yml'
-$srcSkills = Join-Path $repoRoot 'skills'
+$repoRoot     = Split-Path -Parent $PSScriptRoot
+$source       = Join-Path $repoRoot 'presets\pm-preset.patch.yml'
+$srcSkills    = Join-Path $repoRoot 'skills'
+$srcTemplates = Join-Path $repoRoot 'templates'
 
 Write-Host "== dsh-pm-mode 安裝（v$version）=="
 Write-Host "repo      : $repoRoot"
@@ -37,27 +39,36 @@ if (-not (Test-Path -LiteralPath $source))    { throw "找不到來源檔：$sou
 if (-not (Test-Path -LiteralPath $srcSkills)) { throw "找不到 skills 目錄：$srcSkills" }
 if (-not (Test-Path -LiteralPath $DshHome))   { throw "找不到 DSH home：$DshHome（DSH 裝好了嗎？或用 -DshHome 指定）" }
 
-# --- 1. 解析 profile --------------------------------------------------------
+# --- 1. 解析要處理哪些 profile ----------------------------------------------
 $profilesRoot = Join-Path $DshHome 'profiles'
 $candidates = @(
     Get-ChildItem -LiteralPath $profilesRoot -Directory -ErrorAction SilentlyContinue |
         Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'cordis.patch.yml') }
 )
-$exact = @($candidates | Where-Object { $_.Name -eq $Profile })
-if ($exact.Count -eq 1) {
-    $Profile = $exact[0].Name
-} elseif ($candidates.Count -eq 1) {
-    Write-Host "找不到 profile '$Profile'，自動改用唯一的 '$($candidates[0].Name)'"
-    $Profile = $candidates[0].Name
-} elseif ($candidates.Count -eq 0) {
-    throw "在 $profilesRoot 找不到任何含 cordis.patch.yml 的 profile"
-} else {
-    throw "找不到 profile '$Profile'；可選：$($candidates.Name -join ', ')。請用 -Profile 指定。"
+if ($candidates.Count -eq 0) { throw "在 $profilesRoot 找不到任何含 cordis.patch.yml 的 profile" }
+
+function Test-PresetCapable([System.IO.DirectoryInfo]$dir) {
+    $pkg = Join-Path $dir.FullName 'package.json'
+    if (Test-Path -LiteralPath $pkg) {
+        if ([System.IO.File]::ReadAllText($pkg) -match 'dsh-web-app') { return $true }
+    }
+    $txt = [System.IO.File]::ReadAllText((Join-Path $dir.FullName 'cordis.patch.yml'))
+    if ($txt -match 'agent-preset|dsh-agent-preset') { return $true }
+    return $false
 }
 
-$patchPath = Join-Path $profilesRoot (Join-Path $Profile 'cordis.patch.yml')
-Write-Host "profile   : $Profile"
-Write-Host "patch 檔  : $patchPath"
+if ($Profile) {
+    $exact = @($candidates | Where-Object { $_.Name -eq $Profile })
+    if ($exact.Count -ne 1) { throw "找不到 profile '$Profile'；可選：$($candidates.Name -join ', ')" }
+    $targets = @($Profile)
+} else {
+    $targets = @($candidates | Where-Object { Test-PresetCapable $_ } | Select-Object -ExpandProperty Name)
+    if ($targets.Count -eq 0) {
+        $targets = @($candidates | Select-Object -ExpandProperty Name)
+        Write-Host '（沒有 profile 明顯支援 preset，仍對全部 profile 安裝）'
+    }
+}
+Write-Host "profiles  : $($targets -join ', ')"
 
 # --- 2. 複製 skills 到 DSH home（安裝後 repo 可刪）--------------------------
 $modeDir   = Join-Path $DshHome 'pm-mode'
@@ -77,7 +88,6 @@ Write-Host "            $($skillNames -join ', ')"
 $skillsFwd = $skillsDst -replace '\\', '/'
 
 # --- 2b. 複製 templates（PM 開新專案用；複製後 repo 可刪）--------------------
-$srcTemplates = Join-Path $repoRoot 'templates'
 $templatesDst = Join-Path $modeDir 'templates'
 if (Test-Path -LiteralPath $srcTemplates) {
     if (Test-Path -LiteralPath $templatesDst) {
@@ -102,7 +112,7 @@ $manifest = [ordered]@{
     version      = $version
     installedAt  = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
     dshHome      = $DshHome
-    profile      = $Profile
+    profiles     = $targets
     skillsDir    = $skillsFwd
     skills       = $skillNames
     templatesDir = if (Test-Path -LiteralPath $templatesDst) { $templatesDst -replace '\\', '/' } else { '' }
@@ -114,49 +124,57 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Depth 4), $utf8NoBom)
 Write-Host "manifest  : $manifestPath"
 
-# --- 4. 渲染 preset 區塊 ----------------------------------------------------
+# --- 4. 渲染 preset 區塊（共用，一次）---------------------------------------
 $blockText = [System.IO.File]::ReadAllText($source)
 $blockText = $blockText -replace '\{\{PM_SKILLS_DIR\}\}', $skillsFwd
 $blockText = $blockText.TrimEnd()
 
-$raw = [System.IO.File]::ReadAllText($patchPath)
-$stamp  = Get-Date -Format 'yyyyMMdd-HHmmss'
-$backup = "$patchPath.bak-pm-$stamp"
-Copy-Item -LiteralPath $patchPath -Destination $backup -Force
-Write-Host "已備份    : $backup"
+$failed = 0
+foreach ($name in $targets) {
+    $patchPath = Join-Path $profilesRoot (Join-Path $name 'cordis.patch.yml')
+    Write-Host ''
+    Write-Host "[$name] $patchPath"
 
-$nl = if ($raw -match "`r`n") { "`r`n" } else { "`n" }
-$blockText = ($blockText -replace "`r?`n", $nl)
-$managedText = $begin + $nl + $blockText + $nl + $end
+    $raw = [System.IO.File]::ReadAllText($patchPath)
+    $stamp  = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $backup = "$patchPath.bak-pm-$stamp"
+    Copy-Item -LiteralPath $patchPath -Destination $backup -Force
+    Write-Host "  已備份    : $backup"
 
-$pattern = '(?ms)^' + [regex]::Escape($begin) + '.*?^' + [regex]::Escape($end) + '\r?\n?'
-$hadBlock = [regex]::IsMatch($raw, $pattern)
-$stripped = if ($hadBlock) { [regex]::Replace($raw, $pattern, '') } else { $raw }
-if ($stripped -notmatch "\r?\n$") { $stripped += $nl }
-if ($stripped.Trim() -eq '') { $stripped = '' }
+    $nl = if ($raw -match "`r`n") { "`r`n" } else { "`n" }
+    $blockForThis = ($blockText -replace "`r?`n", $nl)
+    $managedText = $begin + $nl + $blockForThis + $nl + $end
 
-$new = $stripped + $managedText + $nl
+    $pattern = '(?ms)^' + [regex]::Escape($begin) + '.*?^' + [regex]::Escape($end) + '\r?\n?'
+    $hadBlock = [regex]::IsMatch($raw, $pattern)
+    $stripped = if ($hadBlock) { [regex]::Replace($raw, $pattern, '') } else { $raw }
+    if ($stripped -notmatch "\r?\n$") { $stripped += $nl }
+    if ($stripped.Trim() -eq '') { $stripped = '' }
 
-# --- 5. 防呆 ----------------------------------------------------------------
-$pmIds = ([regex]::Matches($new, '(?m)^\s*id:\s*pm\s*$')).Count
-if ($pmIds -ne 1) {
-    throw "偵測到 $pmIds 個 'id: pm' 宣告（應為 1）。已中止且未寫入；原檔備份於 $backup"
+    $new = $stripped + $managedText + $nl
+
+    $pmIds = ([regex]::Matches($new, '(?m)^\s*id:\s*pm\s*$')).Count
+    $beginCount = ([regex]::Matches($new, [regex]::Escape($begin))).Count
+    $endCount   = ([regex]::Matches($new, [regex]::Escape($end))).Count
+    if ($pmIds -ne 1 -or $beginCount -ne 1 -or $endCount -ne 1) {
+        Write-Warning "  防呆失敗（pm=$pmIds, begin=$beginCount, end=$endCount）。此 profile 未寫入；備份於 $backup"
+        $failed++
+        continue
+    }
+
+    [System.IO.File]::WriteAllText($patchPath, $new, $utf8NoBom)
+    $action = if ($hadBlock) { '已更新既有區塊' } else { '已追加新區塊' }
+    Write-Host "  $action（marker 1 組）"
 }
-$beginCount = ([regex]::Matches($new, [regex]::Escape($begin))).Count
-$endCount   = ([regex]::Matches($new, [regex]::Escape($end))).Count
-if ($beginCount -ne 1 -or $endCount -ne 1) {
-    throw "marker 數量異常（begin=$beginCount, end=$endCount）。已中止且未寫入；原檔備份於 $backup"
-}
 
-[System.IO.File]::WriteAllText($patchPath, $new, $utf8NoBom)
-$action = if ($hadBlock) { '已更新既有區塊' } else { '已追加新區塊' }
-Write-Host "$action（marker 1 組）"
-
-# --- 6. 下一步 --------------------------------------------------------------
+# --- 5. 下一步 --------------------------------------------------------------
 Write-Host ''
 Write-Host '下一步：'
 Write-Host '  1) 驗證： powershell -ExecutionPolicy Bypass -File .\scripts\verify.ps1'
 Write-Host '  2) 完整重啟 DSH（preset 宣告在啟動時載入）'
 Write-Host '  3) 開新 session，在預設選擇器選「DSH PM 模式」'
-Write-Host ''
-Write-Host "要還原： Copy-Item '$backup' '$patchPath' -Force"
+if ($failed -gt 0) {
+    Write-Host ''
+    Write-Host "有 $failed 個 profile 寫入失敗，請看上面的訊息。"
+    exit 1
+}

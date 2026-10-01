@@ -3,8 +3,9 @@
     dsh-pm-mode 移除腳本（Windows）。可重複執行。
 
 .DESCRIPTION
-    1. 從 <DSH_HOME>/profiles/<profile>/cordis.patch.yml 移除 marker 區塊（先備份），其他使用者內容保留。
-    2. 刪除安裝時複製的 <DSH_HOME>/pm-mode（skills 與 manifest）。
+    1. 從每個 <DSH_HOME>/profiles/<profile>/cordis.patch.yml 移除 marker 區塊（先備份），
+       其他使用者內容一律保留；可用 -Profile 只處理一個。
+    2. 刪除安裝時複製的 <DSH_HOME>/pm-mode（skills、templates 與 manifest）。
     使用者自己的 skill（例如 ~/.dsh/skills/ 下的其他項目）一律不動。
 
 .EXAMPLE
@@ -13,7 +14,7 @@
 [CmdletBinding()]
 param(
     [string]$DshHome = $(if ($env:DSH_HOME) { $env:DSH_HOME } else { Join-Path $HOME '.dsh' }),
-    [string]$Profile = 'web'
+    [string]$Profile = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -29,31 +30,29 @@ $candidates = @(
     Get-ChildItem -LiteralPath $profilesRoot -Directory -ErrorAction SilentlyContinue |
         Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'cordis.patch.yml') }
 )
-$exact = @($candidates | Where-Object { $_.Name -eq $Profile })
-if ($exact.Count -eq 1) { $Profile = $exact[0].Name }
-elseif ($candidates.Count -eq 1) { $Profile = $candidates[0].Name }
+if ($Profile) {
+    $candidates = @($candidates | Where-Object { $_.Name -eq $Profile })
+    if ($candidates.Count -eq 0) { throw "找不到 profile '$Profile'" }
+}
 
-$patchPath = Join-Path $profilesRoot (Join-Path $Profile 'cordis.patch.yml')
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$removedAny = $false
 
-# --- patch 區塊 -------------------------------------------------------------
-if (Test-Path -LiteralPath $patchPath) {
+foreach ($dir in $candidates) {
+    $patchPath = Join-Path $dir.FullName 'cordis.patch.yml'
     $raw = [System.IO.File]::ReadAllText($patchPath)
     $pattern = '(?ms)^' + [regex]::Escape($begin) + '.*?^' + [regex]::Escape($end) + '\r?\n?'
-    if ([regex]::IsMatch($raw, $pattern)) {
-        $stamp  = Get-Date -Format 'yyyyMMdd-HHmmss'
-        $backup = "$patchPath.bak-pm-$stamp"
-        Copy-Item -LiteralPath $patchPath -Destination $backup -Force
-        Write-Host "已備份    : $backup"
-        $new = [regex]::Replace($raw, $pattern, '')
-        [System.IO.File]::WriteAllText($patchPath, $new, $utf8NoBom)
-        Write-Host "已移除 marker 區塊：$patchPath"
-    } else {
-        Write-Host "找不到 marker 區塊，patch 檔未變更：$patchPath"
-    }
-} else {
-    Write-Host "找不到 patch 檔：$patchPath"
+    if (-not [regex]::IsMatch($raw, $pattern)) { continue }
+
+    $stamp  = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $backup = "$patchPath.bak-pm-$stamp"
+    Copy-Item -LiteralPath $patchPath -Destination $backup -Force
+    $new = [regex]::Replace($raw, $pattern, '')
+    [System.IO.File]::WriteAllText($patchPath, $new, $utf8NoBom)
+    Write-Host "已移除區塊：$patchPath（備份：$backup）"
+    $removedAny = $true
 }
+if (-not $removedAny) { Write-Host '找不到任何 dsh-pm-mode 區塊，patch 檔未變更。' }
 
 # --- 模式自己的資料夾 -------------------------------------------------------
 $modeDir = Join-Path $DshHome 'pm-mode'

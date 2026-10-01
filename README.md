@@ -55,16 +55,18 @@ bash scripts/verify.sh
 ```
 
 > 想先留基準（之後才能證明「沒有動到別的東西」）：安裝**前**先跑一次 `verify.ps1 -Snapshot`（bash：`verify.sh -Snapshot`）。
-> 想指定路徑：Windows `-DshHome DIR -Profile NAME`；其他 `--dsh-home DIR --profile NAME`。
+> 想指定路徑：Windows `-DshHome DIR`；其他 `--dsh-home DIR`。
+> **多 profile 注意**：DSH 桌面版用的是 `desktop` profile，瀏覽器版／CLI 常用 `web`。安裝器預設**兩者都裝**（凡是 bundle 含 `dsh-web-app` 的 profile），所以正常不用指定；只有在你明確知道目標時才用 `-Profile NAME`／`--profile NAME`。
 
 ### 安裝做了什麼（只動這些地方）
 
-1. 把 `skills/` 複製到 `<DSH_HOME>/pm-mode/skills/`（`<DSH_HOME>` 預設 `~/.dsh`）。
+1. 把 `skills/` 與 `templates/` 複製到 `<DSH_HOME>/pm-mode/`（`<DSH_HOME>` 預設 `~/.dsh`）。
 2. 寫一份安裝紀錄 `<DSH_HOME>/pm-mode/install.json`。
-3. 在 `<DSH_HOME>/profiles/<profile>/cordis.patch.yml` 尾端插入一段 **marker 區塊**
+3. 在**每個支援 preset 的 profile**（例如 `desktop` 與 `web`）的 `profiles/<profile>/cordis.patch.yml` 尾端插入一段 **marker 區塊**
    （`# >>> dsh-pm-mode:begin` … `# <<< dsh-pm-mode:end`），內容＝`presets/pm-preset.patch.yml` 渲染後原文。
-   - 插入前一定備份成 `cordis.patch.yml.bak-pm-<時間>`。
+   - 每個 profile 插入前都一定備份成 `cordis.patch.yml.bak-pm-<時間>`。
    - 可重複執行（第二次是「更新既有區塊」，不會重複插入）。
+   - `headless` 這類沒有 web-app bundle 的 profile 會自動略過。
 4. **不會**改其他 preset、不會改 `agent-preset-registry` 的預設模式、不會改 DSH 安裝本體。
 
 ### 最後一步要你自己做
@@ -104,10 +106,10 @@ PM 會開始訪談。你只要回答問題、在「規格確認」時說「可�
 | 狀況 | 處理 |
 |---|---|
 | 重啟後 DSH 開不起來 | 還原備份：把 `<DSH_HOME>/profiles/<profile>/cordis.patch.yml.bak-pm-<時間>` 複製回 `cordis.patch.yml`，再重啟 |
-| 選擇器裡沒有「DSH PM 模式」 | 先跑 `verify`（應為「全部檢查通過」），再確認是**完整重啟**而不是只重整瀏覽器頁面 |
+| 選擇器裡沒有「DSH PM 模式」 | ①**先確認你用的入口對應哪個 profile**：桌面版＝`desktop`、瀏覽器版／CLI＝`web`；②跑 `verify`（應「全部檢查通過」，它會列出實際裝了哪些 profile）；③確認是**完整重啟**而不是只重整頁面；④若某個 profile 沒裝到，用 `-Profile NAME`／`--profile NAME` 補裝 |
 | 模式在，但 `pm-*` skill 沒出現 | 重跑安裝（會重新複製技能）；再跑 `verify` 看 skill 檢查那一節 |
 | 想完全移除 | Windows `.\scripts\uninstall.ps1`／其他 `bash scripts/uninstall.sh`，再重啟 |
-| 不知道裝到哪 | 看 `<DSH_HOME>/pm-mode/install.json` |
+| 不知道裝到哪 | 看 `<DSH_HOME>/pm-mode/install.json`（含 `profiles` 清單） |
 
 ---
 

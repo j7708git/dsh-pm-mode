@@ -2,7 +2,7 @@
 # dsh-pm-mode 共用函式（給 install.sh / uninstall.sh / verify.sh 載入）。
 # 只支援 bash 3.2+（macOS 內建版本亦可）。原則：內部一律用 LF 處理，最後再依原檔風格還原 EOL。
 
-PM_VERSION="1.2"
+PM_VERSION="1.3"
 PM_BEGIN='# >>> dsh-pm-mode:begin'
 PM_END='# <<< dsh-pm-mode:end'
 
@@ -11,15 +11,15 @@ pm_usage() {
 用法: $1 [--dsh-home DIR] [--profile NAME]
 
   --dsh-home DIR   DSH home（預設 \$DSH_HOME，否則 ~/.dsh）
-  --profile NAME   profile 名稱（預設 web；找不到時自動採用唯一可用的 profile）
+  --profile NAME   只處理這一個 profile（預設：所有支援 agent preset 的 profile 都裝）
   -h, --help       顯示這段說明
 EOF
 }
 
-# 解析參數：設定 DSH_HOME / PROFILE
+# 解析參數：設定 DSH_HOME / PROFILE（PROFILE 空 = 自動挑所有支援 preset 的 profile）
 pm_parse_args() {
     DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
-    PROFILE="web"
+    PROFILE=""
     while [ $# -gt 0 ]; do
         case "$1" in
             --dsh-home) DSH_HOME="${2:-}"; shift 2 ;;
@@ -31,29 +31,67 @@ pm_parse_args() {
     if [ -z "$DSH_HOME" ]; then printf 'DSH_HOME 不可為空\n' >&2; exit 2; fi
 }
 
-# 找出含 cordis.patch.yml 的 profile，設定 PROFILE 與 PATCH
-pm_resolve_profile() {
-    if [ ! -d "$DSH_HOME/profiles" ]; then
-        printf '找不到 %s/profiles（DSH 裝好了嗎？或用 --dsh-home 指定）\n' "$DSH_HOME" >&2
-        exit 1
+# 列出所有含 cordis.patch.yml 的 profile（每行一個）
+pm_all_profiles() {
+    local d
+    [ -d "$DSH_HOME/profiles" ] || return 0
+    for d in "$DSH_HOME"/profiles/*/; do
+        [ -f "${d}cordis.patch.yml" ] || continue
+        basename "$d"
+    done
+}
+
+# 這個 profile 是否看得出支援 agent preset（bundle 含 dsh-web-app，或 patch 已提到 agent-preset）
+pm_is_preset_capable() {
+    local name="$1"
+    local dir="$DSH_HOME/profiles/$name"
+    if [ -f "$dir/package.json" ] && grep -q 'dsh-web-app' "$dir/package.json" 2>/dev/null; then
+        return 0
     fi
-    if [ -f "$DSH_HOME/profiles/$PROFILE/cordis.patch.yml" ]; then
-        :
-    else
-        local cands=() d
-        for d in "$DSH_HOME"/profiles/*/; do
-            [ -f "${d}cordis.patch.yml" ] && cands+=("$(basename "$d")")
-        done
-        if [ "${#cands[@]}" -eq 1 ]; then
-            printf '找不到 profile %s，自動改用唯一的 %s\n' "$PROFILE" "${cands[0]}"
-            PROFILE="${cands[0]}"
-        elif [ "${#cands[@]}" -eq 0 ]; then
-            printf '在 %s/profiles 找不到任何含 cordis.patch.yml 的 profile\n' "$DSH_HOME" >&2
-            exit 1
-        else
-            printf '找不到 profile %s；可選：%s\n' "$PROFILE" "${cands[*]}" >&2
+    if grep -qE 'agent-preset|dsh-agent-preset' "$dir/cordis.patch.yml" 2>/dev/null; then
+        return 0
+    fi
+    return 1
+}
+
+# 決定要處理哪些 profile。結果放進 PM_TARGETS 陣列；每個 profile 的 patch 為 $DSH_HOME/profiles/<name>/cordis.patch.yml
+pm_resolve_targets() {
+    PM_TARGETS=()
+    local name
+    if [ -n "${PROFILE:-}" ]; then
+        if [ ! -f "$DSH_HOME/profiles/$PROFILE/cordis.patch.yml" ]; then
+            printf '找不到 profile %s；可選：%s\n' "$PROFILE" "$(pm_all_profiles | tr '\n' ' ')" >&2
             exit 1
         fi
+        PM_TARGETS=("$PROFILE")
+        return 0
+    fi
+    while IFS= read -r name; do
+        [ -n "$name" ] || continue
+        if pm_is_preset_capable "$name"; then
+            PM_TARGETS+=("$name")
+        fi
+    done <<EOF
+$(pm_all_profiles)
+EOF
+    if [ "${#PM_TARGETS[@]}" -eq 0 ]; then
+        while IFS= read -r name; do
+            [ -n "$name" ] || continue
+            PM_TARGETS+=("$name")
+        done <<EOF
+$(pm_all_profiles)
+EOF
+        printf '（沒有 profile 明顯支援 preset，仍對全部 profile 安裝）\n'
+    fi
+}
+
+# 向後相容：只取第一個目標（舊呼叫端）
+pm_resolve_profile() {
+    pm_resolve_targets
+    PROFILE="${PM_TARGETS[0]:-}"
+    if [ -z "$PROFILE" ]; then
+        printf '在 %s/profiles 找不到任何含 cordis.patch.yml 的 profile\n' "$DSH_HOME" >&2
+        exit 1
     fi
     PATCH="$DSH_HOME/profiles/$PROFILE/cordis.patch.yml"
 }
