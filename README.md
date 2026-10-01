@@ -75,7 +75,15 @@ bash scripts/verify.sh
 
 ### 怎麼把這個資料夾帶到新電腦
 
-- 複製整個 `dsh-pm-mode` 資料夾即可（含 `.git` 就順便有版控）。用 `git clone` 也一樣。
+**從 GitHub 取得（最省事）**：
+
+```bash
+git clone https://github.com/j7708git/dsh-pm-mode.git
+```
+
+或開 <https://github.com/j7708git/dsh-pm-mode> 按「Code → Download ZIP」。
+
+**或手動複製**：
 - 資料夾放哪都行；安裝後就算刪掉，模式還是能用（技能已在 `<DSH_HOME>/pm-mode/`）。
 - 版本升級＝覆蓋資料夾後**再跑一次安裝**（會更新既有區塊與技能）。
 
